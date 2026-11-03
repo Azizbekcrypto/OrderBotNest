@@ -1,0 +1,286 @@
+// npm run smoke [-- restart | race]
+// Botni Telegram'siz sinaydi: haqiqiy Nest + Telegraf kodi, xabar bot.handleUpdate bilan beriladi,
+// botning javobi ushlanadi (Telegram'ga hech qanday so'rov ketmaydi).
+// Bazangiz o'zgarmaydi: smoke vaqtinchalik <baza>_smoke bazasini ochadi va oxirida o'chiradi.
+//   restart — savat, buyurtma va telefon kutish server qayta ishga tushganda qoladimi
+//   race    — omborda 1 ta Planshet, ikki mijoz bir vaqtda buyurtma beradi; admin ikki marta bekor qiladi
+const path = require('path');
+const { execSync } = require('child_process');
+
+const ROOT = path.resolve(__dirname, '..');
+require('dotenv').config({ path: path.join(ROOT, '.env'), quiet: true });
+const MODE = process.argv[2] || 'all';
+const ADMIN = 111;
+const AZIZA = 5123456789; // 32 bitdan katta — Telegram'da bunday id bor
+const BOBUR = 5987654321;
+const NAME = { [ADMIN]: 'Jasur', [AZIZA]: 'Aziza', [BOBUR]: 'Bobur' };
+
+process.env.BOT_TOKEN = '123:SMOKE';
+process.env.ADMIN_TELEGRAM_IDS = String(ADMIN);
+process.env.DB_LOGGING = 'false';
+
+const results = [];
+const check = (ok, text) => {
+  results.push(ok);
+  console.log(`  ${ok ? '✓' : '✗'} ${text}`);
+};
+
+// ---------- Telegram o'rniga ----------
+const { Telegraf, Telegram } = require('telegraf');
+Telegraf.prototype.launch = async function (cb) {
+  if (cb) cb();
+};
+const inbox = []; // { to, text }
+let mid = 1000;
+Telegram.prototype.callApi = async function (method, p = {}) {
+  if (method === 'sendMessage' || method === 'editMessageText') {
+    inbox.push({ to: Number(p.chat_id), text: String(p.text) });
+    return {
+      message_id: ++mid,
+      chat: { id: p.chat_id },
+      date: 0,
+      text: p.text,
+    };
+  }
+  if (method === 'answerCallbackQuery') {
+    if (p.text) inbox.push({ to: 0, text: String(p.text) });
+    return true;
+  }
+  return true;
+};
+
+// ---------- vaqtinchalik baza ----------
+let pg = null;
+try {
+  pg = require('pg');
+} catch {
+  /* tgpg-start: baza yo'q */
+}
+const baseUrl = process.env.DATABASE_URL || '';
+const hasDb = Boolean(pg && baseUrl);
+let smokeUrl = '';
+async function adminQuery(sql) {
+  const u = new URL(baseUrl);
+  u.pathname = '/postgres';
+  const c = new pg.Client({
+    connectionString: u.toString(),
+    ssl: baseUrl.includes('sslmode=require')
+      ? { rejectUnauthorized: false }
+      : false,
+  });
+  await c.connect();
+  try {
+    await c.query(sql);
+  } finally {
+    await c.end();
+  }
+}
+async function q(sql, params) {
+  const c = new pg.Client({
+    connectionString: smokeUrl,
+    ssl: smokeUrl.includes('sslmode=require')
+      ? { rejectUnauthorized: false }
+      : false,
+  });
+  await c.connect();
+  try {
+    return (await c.query(sql, params)).rows;
+  } finally {
+    await c.end();
+  }
+}
+async function setupDb() {
+  const u = new URL(baseUrl);
+  const db = `${u.pathname.slice(1) || 'shop'}_smoke`;
+  await adminQuery(`DROP DATABASE IF EXISTS "${db}"`);
+  await adminQuery(`CREATE DATABASE "${db}" TEMPLATE template0`);
+  u.pathname = `/${db}`;
+  smokeUrl = u.toString();
+  process.env.DATABASE_URL = smokeUrl;
+  return db;
+}
+
+// ---------- bot ----------
+const { NestFactory } = require('@nestjs/core');
+const dist = (p) => require(path.join(ROOT, 'dist', p));
+let uid = 1;
+async function boot() {
+  const { AppModule } = dist('api/app.module');
+  const { TelegramService } = dist('api/telegram/telegram.service');
+  const app = await NestFactory.createApplicationContext(AppModule, {
+    logger: ['error'],
+  });
+  const bot = app.get(TelegramService).bot;
+  const from = (id) => ({ id, is_bot: false, first_name: NAME[id] });
+  const chat = (id) => ({ id, type: 'private' });
+  const say = (id, text) => {
+    const m = text.match(/^\/\w+/);
+    return bot.handleUpdate({
+      update_id: uid++,
+      message: {
+        message_id: ++mid,
+        from: from(id),
+        chat: chat(id),
+        date: 0,
+        text,
+        entities: m
+          ? [{ type: 'bot_command', offset: 0, length: m[0].length }]
+          : undefined,
+      },
+    });
+  };
+  const tap = (id, data) =>
+    bot.handleUpdate({
+      update_id: uid++,
+      callback_query: {
+        id: String(uid),
+        from: from(id),
+        chat_instance: '1',
+        data,
+        message: {
+          message_id: mid,
+          from: { id: 1, is_bot: true, first_name: 'bot' },
+          chat: chat(id),
+          date: 0,
+          text: '…',
+        },
+      },
+    });
+  return { app, say, tap };
+}
+const last = (id) => [...inbox].reverse().find((m) => m.to === id)?.text || '';
+const productId = async (name) =>
+  (await q('SELECT id FROM products WHERE name = $1', [name]))[0]?.id;
+
+async function restartMode() {
+  console.log('\n— restart: server qayta ishga tushganda nima qoladi');
+  let { app, say, tap } = await boot();
+  await say(AZIZA, '/start');
+  await tap(AZIZA, 'add:1');
+  await tap(AZIZA, 'checkout');
+  const asked = /telefon/i.test(last(AZIZA));
+  await app.close();
+  ({ app, say, tap } = await boot()); // 1-restart: telefon kutilayotganda
+  await say(AZIZA, '+998901234567');
+  const placed = last(AZIZA);
+  const orderOk = asked && /qabul qilindi/i.test(placed);
+  check(
+    orderOk,
+    `telefon kutish restartdan o'tdi → «${placed.split('\n')[0]}»`,
+  );
+  await tap(AZIZA, 'add:2');
+  await app.close();
+  ({ app, say, tap } = await boot()); // 2-restart
+  await say(AZIZA, '/cart');
+  check(
+    /Sichqoncha/.test(last(AZIZA)),
+    `savat restartdan o'tdi → «${last(AZIZA).split('\n')[0]}»`,
+  );
+  await say(ADMIN, '/start');
+  await say(ADMIN, '/orders');
+  check(
+    /#\d+ · Aziza/.test(last(ADMIN)),
+    `buyurtma restartdan o'tdi → «${last(ADMIN).split('\n')[0]}»`,
+  );
+  await app.close();
+}
+
+async function raceMode() {
+  console.log(
+    '\n— race: 1 ta Planshet, 5 mijoz bir vaqtda (3 raund); keyin ikki marta bekor',
+  );
+  if (!hasDb) {
+    console.log('  (baza ulanmagan — race faqat PostgreSQL bilan sinaladi)');
+    return;
+  }
+  // Ikki mijoz yetmaydi: tranzaksiya tez tugaydi va xato ko'pincha ko'rinmaydi. 5 mijoz, 3 raund.
+  const BUYERS = [5100000001, 5100000002, 5100000003, 5100000004, 5100000005];
+  BUYERS.forEach((id, i) => (NAME[id] = `Mijoz${i + 1}`));
+  const { app, say, tap } = await boot();
+  for (const id of BUYERS) await say(id, '/start');
+  await q(
+    "UPDATE users SET phone = '+998900000000' WHERE telegram_id = ANY($1)",
+    [BUYERS.map(String)],
+  );
+  const pid = await productId('Planshet');
+  const rounds = [];
+  let winnerOrder = null;
+  for (let r = 0; r < 3; r++) {
+    await q('UPDATE products SET stock = 1 WHERE id = $1', [pid]);
+    await q('DELETE FROM cart_items');
+    for (const id of BUYERS) await tap(id, `add:${pid}`);
+    inbox.length = 0;
+    await Promise.all(BUYERS.map((id) => tap(id, 'checkout')));
+    const ok = inbox.filter((m) => m.to !== 0 && /qabul qilindi/i.test(m.text));
+    const stock = (
+      await q('SELECT stock FROM products WHERE id = $1', [pid])
+    )[0].stock;
+    rounds.push({ sold: ok.length, stock: Number(stock) });
+    if (!winnerOrder && ok[0]) winnerOrder = ok[0].text.match(/#(\d+)/)?.[1];
+  }
+  const refused = [...inbox].reverse().find((m) => /berilmadi/i.test(m.text));
+  if (refused)
+    console.log(`  rad etilgan mijoz: «${refused.text.split('\n')[0]}»`);
+  const allOk = rounds.every((x) => x.sold === 1 && x.stock === 0);
+  check(
+    allOk,
+    `ortiqcha sotilmadi (sotildi/ombor): ${rounds.map((x) => `${x.sold}/${x.stock}`).join('  ')}`,
+  );
+  if (winnerOrder) {
+    await q('UPDATE products SET stock = 0 WHERE id = $1', [pid]);
+    await say(ADMIN, '/start');
+    await Promise.all([
+      tap(ADMIN, `status:${winnerOrder}:CANCELLED`),
+      tap(ADMIN, `status:${winnerOrder}:CANCELLED`),
+    ]);
+    const s2 = (await q('SELECT stock FROM products WHERE id = $1', [pid]))[0]
+      .stock;
+    check(
+      Number(s2) === 1,
+      `ikki marta bir vaqtda bekor — ombor bir marta qaytdi: 0 → ${s2}`,
+    );
+  }
+  await app.close();
+}
+
+(async () => {
+  console.log('== build ==');
+  execSync('npx nest build', { cwd: ROOT, stdio: 'inherit' });
+  if (hasDb) {
+    const db = await setupDb();
+    console.log(`== vaqtinchalik baza: ${db} ==`);
+    // migratsiyalar server ko'tarilganda o'zi yuradi; katalogni seed to'ldiradi
+    const { app } = await boot();
+    await app.close();
+    try {
+      execSync('npm run -s seed', {
+        cwd: ROOT,
+        stdio: 'pipe',
+        env: process.env,
+      });
+    } catch {
+      /* seed yo'q bo'lsa — mahsulotlar migratsiya ichida bo'lishi mumkin */
+    }
+    const n = (await q('SELECT count(*)::int AS n FROM products'))[0].n;
+    console.log(`  katalogda ${n} ta mahsulot`);
+  } else {
+    console.log("== baza yo'q: hammasi xotirada (tgpg-start) ==");
+  }
+  try {
+    if (MODE === 'all' || MODE === 'restart') await restartMode();
+    if (MODE === 'all' || MODE === 'race') await raceMode();
+  } finally {
+    if (hasDb) {
+      const db = new URL(smokeUrl).pathname.slice(1);
+      await adminQuery(`DROP DATABASE IF EXISTS "${db}" WITH (FORCE)`).catch(
+        () => undefined,
+      );
+    }
+  }
+  const ok = results.filter(Boolean).length;
+  console.log(`\nNATIJA: ${ok}/${results.length} ✓`);
+  process.exit(ok === results.length ? 0 : 1);
+})().catch((e) => {
+  console.error('\nSMOKE XATO:', e.message);
+  process.exit(2);
+});
