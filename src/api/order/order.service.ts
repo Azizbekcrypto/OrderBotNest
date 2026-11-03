@@ -67,6 +67,9 @@ export class OrderService {
   // Status o'zgaradi; bekor qilinsa mahsulotlar omborga qaytadi — yana tranzaksiya
   setStatus(id: number, status: OrderStatus): Promise<Order> {
     return this.ds.transaction(async (m) => {
+      // Buyurtma qatorini qulflaymiz: «Bekor» ikki marta bir vaqtda bosilsa,
+      // ikkinchisi birinchisi tugashini kutadi va CANCELLED ni ko'radi — ombor bir marta qaytadi
+      await m.query('SELECT id FROM orders WHERE id = $1 FOR UPDATE', [id]);
       const order = await m.findOneBy(Order, { id });
       if (!order) throw new Error(`Buyurtma topilmadi: #${id}`);
       if (order.status === 'CANCELLED') {
