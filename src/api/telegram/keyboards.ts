@@ -1,5 +1,5 @@
 import { Markup } from 'telegraf';
-import { Order, Product } from '../../core/types';
+import { Order, Product } from '../../core/entity';
 import { som } from './texts';
 
 // Katalog sahifasi: har mahsulot — bitta tugma (callback "add:<id>"),

@@ -1,25 +1,33 @@
 import { Injectable } from '@nestjs/common';
-import { CartItem } from '../../core/types';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { CartItem, User } from '../../core/entity';
 
 @Injectable()
 export class CartService {
-  // telegramId → savat. Xotirada.
-  private readonly carts = new Map<number, CartItem[]>();
+  constructor(
+    @InjectRepository(CartItem) private readonly repo: Repository<CartItem>,
+  ) {}
 
-  list(telegramId: number): CartItem[] {
-    return this.carts.get(telegramId) ?? [];
+  list(user: User): Promise<CartItem[]> {
+    return this.repo.find({
+      where: { user: { id: user.id } },
+      order: { id: 'ASC' },
+    });
   }
 
-  add(telegramId: number, productId: number): CartItem[] {
-    const cart = this.list(telegramId);
-    const bor = cart.find((i) => i.productId === productId);
-    if (bor) bor.qty += 1;
-    else cart.push({ productId, qty: 1 });
-    this.carts.set(telegramId, cart);
-    return cart;
+  // Bitta so'rov: yo'q bo'lsa INSERT, bor bo'lsa qty + 1 (ON CONFLICT — UNIQUE (user_id, product_id) ustiga)
+  async add(user: User, productId: number): Promise<number> {
+    const rows: { qty: number }[] = await this.repo.query(
+      `INSERT INTO cart_items (user_id, product_id, qty) VALUES ($1, $2, 1)
+       ON CONFLICT (user_id, product_id) DO UPDATE SET qty = cart_items.qty + 1
+       RETURNING qty`,
+      [user.id, productId],
+    );
+    return rows[0].qty;
   }
 
-  clear(telegramId: number): void {
-    this.carts.delete(telegramId);
+  async clear(user: User): Promise<void> {
+    await this.repo.delete({ user: { id: user.id } });
   }
 }

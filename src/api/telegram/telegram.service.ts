@@ -1,7 +1,7 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Context, Telegraf } from 'telegraf';
 import { config } from '../../config';
-import { OrderStatus, User } from '../../core/types';
+import { OrderStatus, User } from '../../core/entity';
 import { CartService } from '../cart/cart.service';
 import { CatalogService } from '../catalog/catalog.service';
 import { OrderService } from '../order/order.service';
@@ -32,6 +32,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     this.registerCustomer();
     this.registerAdmin();
     this.bot.on('text', (ctx) => this.onText(ctx));
+    this.bot.catch(async (err, ctx) => {
+      console.error('Bot xatosi:', (err as Error).message);
+      await ctx.reply(texts.unknown).catch(() => undefined);
+    });
 
     this.bot
       .launch(() => console.log('Telegram bot ulandi'))
@@ -55,7 +59,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   // ---------- mijoz ----------
   private registerCustomer() {
     this.bot.start(async (ctx) => {
-      const user = this.users.getOrCreate(ctx.from);
+      const user = await this.users.getOrCreate(ctx.from);
       await ctx.reply(texts.start(user.name, user.role === 'admin'));
     });
 
@@ -69,10 +73,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.bot.action(/^add:(\d+)$/, async (ctx) => {
-      const p = this.catalog.find(Number(ctx.match[1]));
+      const p = await this.catalog.find(Number(ctx.match[1]));
       if (!p) return ctx.answerCbQuery('Mahsulot topilmadi');
-      const cart = this.cart.add(ctx.from.id, p.id);
-      const qty = cart.find((i) => i.productId === p.id)?.qty ?? 1;
+      const user = await this.users.getOrCreate(ctx.from);
+      const qty = await this.cart.add(user, p.id);
       await ctx.answerCbQuery(texts.added(p, qty));
     });
 
@@ -85,19 +89,19 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.bot.action('cart:clear', async (ctx) => {
-      this.cart.clear(ctx.from.id);
+      const user = await this.users.getOrCreate(ctx.from);
+      await this.cart.clear(user);
       await ctx.answerCbQuery();
       await ctx.reply(texts.cartCleared);
     });
 
     this.bot.action('checkout', async (ctx) => {
       await ctx.answerCbQuery();
-      const user = this.users.getOrCreate(ctx.from);
-      if (this.cart.list(user.telegramId).length === 0) {
-        return ctx.reply(texts.cartEmpty);
-      }
+      const user = await this.users.getOrCreate(ctx.from);
+      const items = await this.cart.list(user);
+      if (items.length === 0) return ctx.reply(texts.cartEmpty);
       if (!user.phone) {
-        this.users.setState(user, 'WAITING_PHONE');
+        await this.users.setState(user, 'WAITING_PHONE');
         return ctx.reply(texts.askPhone);
       }
       await this.placeOrder(ctx, user);
@@ -105,7 +109,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async showCatalog(ctx: Context, page: number, edit = false) {
-    const { items, pages } = this.catalog.page(page);
+    const { items, pages } = await this.catalog.page(page);
     const text = texts.catalogTitle(page, pages);
     const kb = catalogKeyboard(items, page, pages);
     if (edit) {
@@ -120,24 +124,24 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async showCart(ctx: Context) {
-    const items = this.cart.list(ctx.from!.id);
+    const user = await this.users.getOrCreate(ctx.from!);
+    const items = await this.cart.list(user);
     if (items.length === 0) return ctx.reply(texts.cartEmpty);
-    const lines = items
-      .map((item) => ({ p: this.catalog.find(item.productId)!, item }))
-      .filter((l) => l.p);
-    const total = lines.reduce((s, l) => s + l.p.price * l.item.qty, 0);
-    await ctx.reply(texts.cart(lines, total), cartKeyboard());
+    const total = items.reduce((s, i) => s + i.product.price * i.qty, 0);
+    await ctx.reply(texts.cart(items, total), cartKeyboard());
   }
 
   private async placeOrder(ctx: Context, user: User) {
     try {
-      const order = this.orders.place(user, this.cart.list(user.telegramId));
-      this.cart.clear(user.telegramId);
+      const order = await this.orders.place(user, await this.cart.list(user));
       await ctx.reply(texts.orderPlaced(order));
-      for (const admin of this.users.admins()) {
-        if (admin.telegramId === user.telegramId) continue;
+      for (const admin of await this.users.admins()) {
+        if (admin.telegram_id === user.telegram_id) continue;
         await this.bot.telegram
-          .sendMessage(admin.telegramId, texts.adminNewOrder(order, user.name))
+          .sendMessage(
+            Number(admin.telegram_id),
+            texts.adminNewOrder(order, user.name),
+          )
           .catch(() => undefined);
       }
     } catch (e) {
@@ -147,11 +151,11 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
   // Matn keldi: telefon kutilayotgan bo'lsa — saqlab buyurtma beramiz
   private async onText(ctx: Context & { message: { text: string } }) {
-    const user = this.users.getOrCreate(ctx.from!);
+    const user = await this.users.getOrCreate(ctx.from!);
     if (user.state === 'WAITING_PHONE') {
       const phone = ctx.message.text.trim();
       if (!PHONE.test(phone)) return ctx.reply(texts.badPhone);
-      this.users.setPhone(user, phone);
+      await this.users.setPhone(user, phone);
       return this.placeOrder(ctx, user);
     }
     await ctx.reply(texts.unknown);
@@ -160,45 +164,39 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   // ---------- admin ----------
   private registerAdmin() {
     this.bot.command('orders', async (ctx) => {
-      const user = this.users.getOrCreate(ctx.from);
+      const user = await this.users.getOrCreate(ctx.from);
       if (user.role !== 'admin') return ctx.reply(texts.adminOnly);
-      const list = this.orders.recent(5);
+      const list = await this.orders.recent(5);
       if (list.length === 0) return ctx.reply(texts.noOrders);
-      for (const o of list) {
-        const customer = this.customerName(o.telegramId);
-        await ctx.reply(texts.orderLine(o, customer), orderKeyboard(o));
-      }
+      for (const o of list)
+        await ctx.reply(texts.orderLine(o), orderKeyboard(o));
     });
 
     this.bot.action(
       /^status:(\d+):(NEW|CONFIRMED|DELIVERED|CANCELLED)$/,
       async (ctx) => {
-        const user = this.users.getOrCreate(ctx.from);
+        const user = await this.users.getOrCreate(ctx.from);
         if (user.role !== 'admin') return ctx.answerCbQuery(texts.adminOnly);
         try {
-          const order = this.orders.setStatus(
+          const order = await this.orders.setStatus(
             Number(ctx.match[1]),
             ctx.match[2] as OrderStatus,
           );
           await ctx.answerCbQuery(texts.statusChanged(order));
           await ctx.editMessageText(
-            texts.orderLine(order, this.customerName(order.telegramId)),
+            texts.orderLine(order),
             orderKeyboard(order),
           );
           await this.bot.telegram
-            .sendMessage(order.telegramId, texts.customerStatus(order))
+            .sendMessage(
+              Number(order.user.telegram_id),
+              texts.customerStatus(order),
+            )
             .catch(() => undefined);
         } catch (e) {
           await ctx.answerCbQuery((e as Error).message);
         }
       },
     );
-  }
-
-  private customerName(telegramId: number): string {
-    return this.users.getOrCreate({
-      id: telegramId,
-      first_name: `id ${telegramId}`,
-    }).name;
   }
 }
