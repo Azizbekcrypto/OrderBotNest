@@ -34,7 +34,7 @@ export const cartKeyboard = () =>
     ],
   ]);
 
-// Admin: har buyurtma ostida holat tugmalari ("status:<id>:<STATUS>")
+// Admin: har buyurtma ostida status tugmalari ("status:<id>:<STATUS>")
 export const orderKeyboard = (o: Order) => {
   if (o.status === 'DELIVERED' || o.status === 'CANCELLED') return undefined;
   const row =
