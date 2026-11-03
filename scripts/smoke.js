@@ -56,7 +56,7 @@ try {
 } catch {
   /* tgpg-start: baza yo'q */
 }
-const baseUrl = process.env.DATABASE_URL || '';
+const baseUrl = process.env.SMOKE_DB_URL || process.env.DATABASE_URL || '';
 const hasDb = Boolean(pg && baseUrl);
 let smokeUrl = '';
 async function adminQuery(sql) {
@@ -152,37 +152,56 @@ const last = (id) => [...inbox].reverse().find((m) => m.to === id)?.text || '';
 const productId = async (name) =>
   (await q('SELECT id FROM products WHERE name = $1', [name]))[0]?.id;
 
+// restart: har qadam — ALOHIDA node jarayoni (haqiqiy restart: RAM ham, modul darajasidagi o'zgaruvchilar ham yangidan)
+async function step(n) {
+  const { app, say, tap } = await boot();
+  const out = {};
+  if (n === 1) {
+    await say(AZIZA, '/start');
+    await tap(AZIZA, 'add:1');
+    await tap(AZIZA, 'checkout');
+    out.asked = last(AZIZA);
+  } else if (n === 2) {
+    await say(AZIZA, '+998901234567');
+    out.placed = last(AZIZA);
+    await tap(AZIZA, 'add:2');
+  } else {
+    await say(AZIZA, '/cart');
+    out.cart = last(AZIZA);
+    await say(ADMIN, '/start');
+    await say(ADMIN, '/orders');
+    out.orders = last(ADMIN);
+  }
+  await app.close();
+  console.log('SMOKE_STEP ' + JSON.stringify(out));
+}
+function runStep(n) {
+  const env = { ...process.env, SMOKE_DB_URL: smokeUrl };
+  const txt = execSync(`node "${__filename}" __step ${n}`, {
+    cwd: ROOT,
+    env,
+    encoding: 'utf8',
+  });
+  const line = txt.split('\n').find((l) => l.startsWith('SMOKE_STEP '));
+  return JSON.parse(line.slice('SMOKE_STEP '.length));
+}
 async function restartMode() {
-  console.log('\n— restart: server qayta ishga tushganda nima qoladi');
-  let { app, say, tap } = await boot();
-  await say(AZIZA, '/start');
-  await tap(AZIZA, 'add:1');
-  await tap(AZIZA, 'checkout');
-  const asked = /telefon/i.test(last(AZIZA));
-  await app.close();
-  ({ app, say, tap } = await boot()); // 1-restart: telefon kutilayotganda
-  await say(AZIZA, '+998901234567');
-  const placed = last(AZIZA);
-  const orderOk = asked && /qabul qilindi/i.test(placed);
-  check(
-    orderOk,
-    `telefon kutish restartdan o'tdi → «${placed.split('\n')[0]}»`,
+  console.log(
+    '\n— restart: har qadam alohida jarayonda (server haqiqatan qayta ishga tushadi)',
   );
-  await tap(AZIZA, 'add:2');
-  await app.close();
-  ({ app, say, tap } = await boot()); // 2-restart
-  await say(AZIZA, '/cart');
+  const s1 = runStep(1);
+  const s2 = runStep(2);
+  const ok1 = /telefon/i.test(s1.asked) && /qabul qilindi/i.test(s2.placed);
+  check(ok1, `telefon kutish restartdan o'tdi → «${s2.placed.split('\n')[0]}»`);
+  const s3 = runStep(3);
   check(
-    /Sichqoncha/.test(last(AZIZA)),
-    `savat restartdan o'tdi → «${last(AZIZA).split('\n')[0]}»`,
+    /Sichqoncha/.test(s3.cart),
+    `savat restartdan o'tdi → «${s3.cart.split('\n')[0]}»`,
   );
-  await say(ADMIN, '/start');
-  await say(ADMIN, '/orders');
   check(
-    /#\d+ · Aziza/.test(last(ADMIN)),
-    `buyurtma restartdan o'tdi → «${last(ADMIN).split('\n')[0]}»`,
+    /#\d+ · Aziza/.test(s3.orders),
+    `buyurtma restartdan o'tdi → «${s3.orders.split('\n')[0]}»`,
   );
-  await app.close();
 }
 
 async function raceMode() {
@@ -244,6 +263,14 @@ async function raceMode() {
 }
 
 (async () => {
+  if (process.argv[2] === '__step') {
+    if (process.env.SMOKE_DB_URL) {
+      smokeUrl = process.env.SMOKE_DB_URL;
+      process.env.DATABASE_URL = smokeUrl;
+    }
+    await step(Number(process.argv[3]));
+    process.exit(0);
+  }
   console.log('== build ==');
   execSync('npx nest build', { cwd: ROOT, stdio: 'inherit' });
   if (hasDb) {
