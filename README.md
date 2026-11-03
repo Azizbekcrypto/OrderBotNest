@@ -40,6 +40,20 @@ src/
   api/order/                   — buyurtma: yaratish, holatini o'zgartirish
 ```
 
+## Tekshiruv: `npm run smoke`
+
+Botni Telegram'siz sinaydi: haqiqiy kod, xabarlar ichkaridan beriladi, javoblar ushlanadi — Telegram'ga so'rov ketmaydi.
+Bazangiz o'zgarmaydi: smoke vaqtinchalik `<baza>_smoke` bazasini ochadi va oxirida o'chiradi.
+
+```bash
+npm run smoke            # hammasi
+npm run smoke -- restart # savat, buyurtma va telefon kutish restartdan o'tadimi
+npm run smoke -- race    # 1 ta Planshet, 5 mijoz bir vaqtda (3 raund) + ikki marta bir vaqtda «Bekor»
+```
+
+`tgpg-start` da `restart` 0/3 chiqadi — hammasi xotirada, shu darsning muammosi. `tgpg-done` da 5/5.
+AI kodni o'zgartirgandan keyin har bosqichda yurgizing: ✗ chiqsa, qaysi band ekanini o'qing.
+
 ## Teglar
 
 | Teg | Holat |
