@@ -12,16 +12,23 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "lint": "tsc --noEmit",
     "test": "jest",
+    "seed": "ts-node src/infrastructure/seed.ts",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/infrastructure/data-source.ts",
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/infrastructure/data-source.ts",
+    "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/infrastructure/data-source.ts src/infrastructure/migrations/auto",
     "smoke": "node scripts/smoke.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.0",
     "@nestjs/core": "^11.1.0",
     "@nestjs/platform-express": "^11.1.0",
+    "@nestjs/typeorm": "^11.0.3",
     "dotenv": "^17.2.3",
+    "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "telegraf": "^4.16.3"
+    "telegraf": "^4.16.3",
+    "typeorm": "^1.1.2"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",

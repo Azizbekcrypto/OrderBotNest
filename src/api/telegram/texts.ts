@@ -1,14 +1,24 @@
-import { CartItem, Order, Product } from '../../core/types';
+import { CartItem, Order, OrderStatus, Product } from '../../core/entity';
 
 // 120000 → "120 000 so'm"
 export const som = (n: number) => `${n.toLocaleString('ru-RU')} so'm`;
 
-export const STATUS_UZ: Record<Order['status'], string> = {
+export const STATUS_UZ: Record<OrderStatus, string> = {
   NEW: '🆕 Yangi',
   CONFIRMED: '✅ Tasdiqlangan',
   DELIVERED: '🚚 Yetkazilgan',
   CANCELLED: '❌ Bekor qilingan',
 };
+
+const itemLines = (
+  items: { product: Product; qty: number; price?: number }[],
+) =>
+  items
+    .map(
+      (i) =>
+        `• ${i.product.name} × ${i.qty} = ${som((i.price ?? i.product.price) * i.qty)}`,
+    )
+    .join('\n');
 
 export const texts = {
   start: (name: string, isAdmin: boolean) =>
@@ -24,32 +34,22 @@ export const texts = {
   added: (p: Product, qty: number) =>
     `${p.name} savatga qo'shildi (${qty} ta).`,
   cartEmpty: `Savat bo'sh. /catalog dan mahsulot tanlang.`,
-  cart: (lines: { p: Product; item: CartItem }[], total: number) =>
-    `Savat:\n` +
-    lines
-      .map(
-        ({ p, item }) =>
-          `• ${p.name} × ${item.qty} = ${som(p.price * item.qty)}`,
-      )
-      .join('\n') +
-    `\n\nJami: ${som(total)}`,
+  cart: (items: CartItem[], total: number) =>
+    `Savat:\n${itemLines(items)}\n\nJami: ${som(total)}`,
   cartCleared: `Savat tozalandi.`,
   askPhone: `Buyurtma uchun telefon raqamingizni yozing (masalan, +998901234567):`,
   badPhone: `Raqam noto'g'ri. Masalan: +998901234567`,
   orderPlaced: (o: Order) =>
-    `Buyurtma #${o.id} qabul qilindi!\n` +
-    o.items
-      .map((i) => `• ${i.name} × ${i.qty} = ${som(i.price * i.qty)}`)
-      .join('\n') +
-    `\n\nJami: ${som(o.total)}\nTelefon: ${o.phone}\nHolati: ${STATUS_UZ[o.status]}`,
+    `Buyurtma #${o.id} qabul qilindi!\n${itemLines(o.items)}\n\n` +
+    `Jami: ${som(o.total)}\nTelefon: ${o.phone}\nHolati: ${STATUS_UZ[o.status]}`,
   orderFailed: (reason: string) => `Buyurtma berilmadi: ${reason}`,
   adminNewOrder: (o: Order, customer: string) =>
     `🆕 Yangi buyurtma #${o.id} — ${customer}, ${som(o.total)}. /orders`,
   adminOnly: `Bu buyruq faqat admin uchun.`,
   noOrders: `Hozircha buyurtma yo'q.`,
-  orderLine: (o: Order, customer: string) =>
-    `#${o.id} · ${customer} · ${som(o.total)} · ${STATUS_UZ[o.status]}\n` +
-    o.items.map((i) => `   ${i.name} × ${i.qty}`).join('\n'),
+  orderLine: (o: Order) =>
+    `#${o.id} · ${o.user.name} · ${som(o.total)} · ${STATUS_UZ[o.status]}\n` +
+    o.items.map((i) => `   ${i.product.name} × ${i.qty}`).join('\n'),
   statusChanged: (o: Order) => `#${o.id} → ${STATUS_UZ[o.status]}`,
   customerStatus: (o: Order) => `Buyurtmangiz #${o.id}: ${STATUS_UZ[o.status]}`,
   unknown: `Tushunmadim. /help ni bosing.`,
