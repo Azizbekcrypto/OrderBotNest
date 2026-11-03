@@ -23,7 +23,7 @@ Bot: katalog (inline tugmalar, sahifalash) → savat → buyurtma (telefon) → 
 | mijoz | `/cart` | savat, jami; «✅ Buyurtma berish», «🗑 Tozalash» |
 | mijoz | «✅ Buyurtma berish» | telefon so'raydi (bir marta), buyurtma yaratadi, ombordan ayiradi |
 | admin | `/orders` | oxirgi 5 buyurtma, har birida «✅ Tasdiqlash / 🚚 Yetkazildi / ❌ Bekor» |
-| admin | holat tugmasi | holat o'zgaradi, mijozga xabar boradi; bekor qilinsa mahsulot omborga qaytadi |
+| admin | status tugmasi | status o'zgaradi, mijozga xabar boradi; bekor qilinsa mahsulot omborga qaytadi |
 
 ## Papkalar
 
@@ -35,9 +35,9 @@ src/
   api/app.module.ts            — modullar yig'iladi
   api/telegram/                — bot: buyruqlar, tugmalar (keyboards.ts), matnlar (texts.ts)
   api/catalog/                 — mahsulotlar va ombor (stock)
-  api/user/                    — foydalanuvchi: rol (admin/customer), telefon, suhbat holati (state)
+  api/user/                    — foydalanuvchi: rol (admin/customer), telefon, suhbat state'i
   api/cart/                    — savat
-  api/order/                   — buyurtma: yaratish, holatini o'zgartirish
+  api/order/                   — buyurtma: yaratish, statusini o'zgartirish
 ```
 
 ## Tekshiruv: `npm run smoke`
@@ -56,7 +56,7 @@ AI kodni o'zgartirgandan keyin har bosqichda yurgizing: ✗ chiqsa, qaysi band e
 
 ## Teglar
 
-| Teg | Holat |
+| Teg | Nima bor |
 |---|---|
 | `tgpg-start` | bot to'liq ishlaydi, lekin **hammasi xotirada**: server qayta ishga tushsa savat, buyurtmalar, telefonlar yo'qoladi |
 | `tgpg-done` | hammasi **PostgreSQL**da: TypeORM, migratsiyalar, tranzaksiya, `CHECK (stock >= 0)` |

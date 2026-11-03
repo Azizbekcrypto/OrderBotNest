@@ -3,7 +3,7 @@
 
 export type Role = 'customer' | 'admin';
 
-// Suhbat qaysi bosqichda: oddiy holat yoki telefon kutilmoqda
+// Suhbat qaysi bosqichda: oddiy (IDLE) yoki telefon kutilmoqda
 export type UserState = 'IDLE' | 'WAITING_PHONE';
 
 export type OrderStatus = 'NEW' | 'CONFIRMED' | 'DELIVERED' | 'CANCELLED';
