@@ -33,7 +33,7 @@ export class OrderService {
           lock: { mode: 'pessimistic_write' },
         });
         if (!p) throw new Error(`Mahsulot topilmadi: ${c.product.name}`);
-        if (p.stock < c.qty) {
+        if (p.stock <= c.qty) {
           throw new Error(`${p.name}: omborda faqat ${p.stock} ta qoldi`);
         }
         // 2) Ayiramiz. Bazadagi CHECK (stock >= 0) — oxirgi qo'riqchi: kod xato qilsa ham manfiy bo'lmaydi.
