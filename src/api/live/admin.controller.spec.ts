@@ -9,6 +9,7 @@ import { AdminController } from './admin.controller';
 const order = {
   id: 12,
   status: 'NEW',
+  payment_status: 'paid',
   total: 100000,
   phone: '+998901234567',
   user: { name: 'Aziza' },
@@ -57,6 +58,7 @@ describe('AdminController', () => {
       {
         id: 12,
         status: 'NEW',
+        payment: 'paid',
         total: 100000,
         customer: 'Aziza',
         phone: '+998901234567',

@@ -10,6 +10,8 @@ export const config = {
   BOT_TOKEN: String(process.env.BOT_TOKEN || ''),
   // jonli panel (/admin) va WebSocket ulanishi uchun maxfiy so'z — o'zingiz o'ylab topasiz
   ADMIN_PANEL_TOKEN: String(process.env.ADMIN_PANEL_TOKEN || ''),
+  // to'lov xizmati bilan umumiy maxfiy kalit: webhook imzosi shu bilan tekshiriladi (faqat .env da, kodga yozilmaydi)
+  PAYMENT_WEBHOOK_SECRET: String(process.env.PAYMENT_WEBHOOK_SECRET || ''),
   // "123,456" → [123, 456]
   ADMIN_TELEGRAM_IDS: String(process.env.ADMIN_TELEGRAM_IDS || '')
     .split(',')

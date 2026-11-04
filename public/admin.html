@@ -36,8 +36,8 @@
     <button>Kirish</button>
   </form>
   <table>
-    <thead><tr><th>#</th><th>Mijoz</th><th>Telefon</th><th>Mahsulotlar</th><th>Jami</th><th>Holat</th><th>Vaqt</th></tr></thead>
-    <tbody id="royxat"><tr><td colspan="7">Token kiriting</td></tr></tbody>
+    <thead><tr><th>#</th><th>Mijoz</th><th>Telefon</th><th>Mahsulotlar</th><th>Jami</th><th>Holat</th><th>To'lov</th><th>Vaqt</th></tr></thead>
+    <tbody id="royxat"><tr><td colspan="8">Token kiriting</td></tr></tbody>
   </table>
   <p class="izoh">Yangi buyurtma yoki holat o'zgarsa, ro'yxat o'zi yangilanadi — sahifani qayta ochish shart emas.</p>
 </main>
@@ -48,6 +48,8 @@
   // ulanmagan — klient urinmayapti (token noto'g'ri — server ulanishni yopdi)
   const HOLAT = { ulangan: 'Ulangan', ulanmoqda: 'Ulanmoqda…', ulanmagan: 'Ulanmagan' };
   const STATUS = { NEW: 'Yangi', CONFIRMED: 'Tasdiqlandi', DELIVERED: 'Yetkazildi', CANCELLED: 'Bekor' };
+  // to'lov webhook'idan: to'landi / rad etildi; xabar hali kelmagan bo'lsa — «—»
+  const TOLOV = { paid: "✅ To'landi", failed: '❌ Rad etildi' };
   const el = (id) => document.getElementById(id);
   // Telegram'dan kelgan ism va mahsulot nomi — matn sifatida (ichida HTML bo'lsa ham ishlamaydi)
   const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -65,7 +67,7 @@
   async function yukla() {
     const r = await fetch('/admin/orders', { headers: { Authorization: 'Bearer ' + token } });
     if (r.status === 401) {
-      el('royxat').innerHTML = "<tr><td colspan='7'>Token noto'g'ri</td></tr>";
+      el('royxat').innerHTML = "<tr><td colspan='8'>Token noto'g'ri</td></tr>";
       return;
     }
     const list = await r.json();
@@ -74,9 +76,9 @@
       ? list.map((o) => `<tr class="${o.id > oxirgiId && oxirgiId ? 'yangi' : ''}">
           <td>${o.id}</td><td>${esc(o.customer)}</td><td>${esc(o.phone)}</td>
           <td>${o.items.map((i) => `${esc(i.name)} × ${i.qty}`).join('<br>')}</td>
-          <td>${o.total.toLocaleString('ru-RU')} so'm</td><td>${STATUS[o.status] || o.status}</td>
+          <td>${o.total.toLocaleString('ru-RU')} so'm</td><td>${STATUS[o.status] || o.status}</td><td>${TOLOV[o.payment] || '—'}</td>
           <td>${new Date(o.created_at).toLocaleTimeString('ru-RU')}</td></tr>`).join('')
-      : "<tr><td colspan='7'>Hali buyurtma yo'q</td></tr>";
+      : "<tr><td colspan='8'>Hali buyurtma yo'q</td></tr>";
     oxirgiId = eng;
   }
 

@@ -32,6 +32,7 @@ export class AdminController {
     return orders.map((o) => ({
       id: o.id,
       status: o.status,
+      payment: o.payment_status, // 'paid' | 'failed' | null — to'lov webhook'idan
       total: o.total,
       customer: o.user?.name ?? '',
       phone: o.phone,

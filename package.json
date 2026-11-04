@@ -17,7 +17,8 @@
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/infrastructure/data-source.ts",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/infrastructure/data-source.ts src/infrastructure/migrations/auto",
     "smoke": "node scripts/smoke.js",
-    "live": "node scripts/live-client.js"
+    "live": "node scripts/live-client.js",
+    "pay": "node scripts/pay.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.0",

@@ -62,6 +62,24 @@ socket.io ulanishni o'zi tiklaydi, lekin **ulanish yo'q paytda yuborilgan `order
 - Ro'yxat ikki joyda so'raladi: `connect` va `order-changed`. Tinglovchi **bir marta, `connect` dan tashqarida** qo'shiladi — ichida bo'lsa har qayta ulanishda yana bittasi qo'shiladi va bitta hodisaga bir nechta `GET` ketadi.
 - Qanday buziladi va qanday tekshiriladi — `BUZISH.md`.
 
+## To'lov webhook'i
+
+To'lov xizmati (Payme, Click kabi) mijoz to'laganini **o'zi** serverga xabar qiladi: `POST /payments/webhook`. Ilova yoki mijozning «to'ladim» degani dalil emas — dalil faqat xizmatning imzoli xabari.
+
+| Qadam | Nima tekshiriladi | Xato bo'lsa |
+|---|---|---|
+| 1 · imzo | `X-Signature` = HMAC-SHA256(**xom tana**, `PAYMENT_WEBHOOK_SECRET`) | `401`, hech narsa yozilmaydi |
+| 2 · maydonlar | `paymentId`, `orderId`, `status: 'paid' \| 'failed'`, `amount` | `400` |
+| 3 · buyurtma | buyurtma bor va `amount` = `total` | `400` |
+| 4 · yozuv | `payments` ga qator — `payment_id` noyob | takror: `200 { duplicate: true }`, ikkinchi qator yo'q |
+| 5 · panel | `order-changed { orderId, reason: 'payment' }` | — |
+
+- Imzo **yozuvdan oldin** tekshiriladi. Kalit faqat `.env` da (va hostingda) — kodga, git'ga, chatga yozilmaydi; bo'sh bo'lsa har xabar `401`.
+- Imzo baytlardan hisoblanadi: server `rawBody: true` bilan ishga tushadi (`main.ts`). JSON qayta yozilsa (bo'sh joy, kalitlar tartibi) imzo mos kelmaydi.
+- Rad etilgan to'lov ham yoziladi (`status: 'failed'`); oldin to'langan buyurtmani «rad» ga tushirmaydi. Panelda «To'lov» ustuni.
+- Lokal sinov (haqiqiy xizmatsiz): `npm run pay -- <buyurtma raqami> [ok | rad | ikki | imzosiz | soxta]` — xabarni xizmat kabi imzolab yuboradi.
+- Telegram'siz tekshirish: `npm run smoke -- payment`.
+
 ## Baza
 
 | Jadval | Nima | Muhim ustun / qoida |
@@ -82,8 +100,8 @@ Qo'lda: `npm run migration:run` · `npm run migration:revert` · entity o'zgarga
 ```
 src/
   main.ts                           — serverni ko'taradi
-  config/index.ts                   — .env o'qiladi (BOT_TOKEN, ADMIN_TELEGRAM_IDS, ADMIN_PANEL_TOKEN, DATABASE_URL, DB_LOGGING, PORT)
-  core/entity/                      — jadvallar: product, user, cart-item, order, order-item
+  config/index.ts                   — .env o'qiladi (BOT_TOKEN, ADMIN_TELEGRAM_IDS, ADMIN_PANEL_TOKEN, PAYMENT_WEBHOOK_SECRET, DATABASE_URL, DB_LOGGING, PORT)
+  core/entity/                      — jadvallar: product, user, cart-item, order, order-item, payment
   infrastructure/data-source.ts     — bitta ulanish sozlamasi (Nest ham, typeorm CLI ham)
   infrastructure/database.module.ts — TypeOrmModule.forRoot + migratsiyalar avto
   infrastructure/migrations/        — SQL migratsiyalar
@@ -95,9 +113,11 @@ src/
   api/cart/                         — savat: INSERT … ON CONFLICT DO UPDATE
   api/order/                        — buyurtma: tranzaksiya, status, bekor → ombor qaytadi
   api/live/                         — jonli panel: gateway (order-changed), /admin sahifasi va GET /admin/orders
+  api/payment/                      — to'lov webhook'i: imzo (signature.ts), maydonlar, takror (payment_id noyob)
 public/admin.html                   — panel sahifasi (socket.io klienti)
 scripts/smoke.js                    — npm run smoke: Telegram'siz tekshiruv
 scripts/live-client.js              — npm run live: terminaldan panel kabi ulanish
+scripts/pay.js                      — npm run pay: soxta to'lov xizmati (imzolab webhook yuboradi)
 ```
 
 ## Tekshiruv: `npm run smoke`
@@ -127,6 +147,7 @@ AI kodni o'zgartirgandan keyin har bosqichda yurgizing: ✗ chiqsa, qaysi band e
 | `cicd2-start` / `cicd2-done` | lentada `smoke` job (`services: postgres`), README badge (PR #1) |
 | `ws1-start` / `ws1-done` | jonli panel: socket.io gateway, `order-changed`, `/admin`, `npm run live` |
 | `ws2-start` / `ws2-done` | qayta ulanish: panel va `npm run live` har `connect` da ro'yxatni qayta so'raydi; `BUZISH.md` |
+| `wh-start` / `wh-done` | to'lov webhook'i: `POST /payments/webhook` (imzo, takror, rad), `payments` jadvali, panelda «To'lov», `npm run pay` |
 
 Mentor darsi `tgpg-start` dan boshlanadi: `git checkout tgpg-start`. Oxirida o'z natijangizni `tgpg-done` bilan solishtirasiz.
 
@@ -147,4 +168,7 @@ Mentor darsi `tgpg-start` dan boshlanadi: `git checkout tgpg-start`. Oxirida o'z
 | belgi «Ulangan», lekin yangi buyurtma ro'yxatda yo'q (bazada bor) | qayta ulanishdan oldin yuborilgan hodisa kelmaydi; panel `connect` da qayta so'ramayapti | `ws2-done`: `connect` ichida `yukla()` |
 | bitta buyurtmaga bir nechta `GET /admin/orders` (F12 → Network), sariq belgi yo'qoladi | `order-changed` tinglovchisi `connect` ichida — har qayta ulanishda yana bittasi | tinglovchini `connect` dan tashqariga, bir marta |
 | `GET /admin/orders` → 401 | `Authorization: Bearer <token>` yo'q yoki noto'g'ri | panel o'zi yuboradi; curl'da sarlavhani qo'shing |
+| `POST /payments/webhook` → 401 | imzo yo'q/noto'g'ri, `PAYMENT_WEBHOOK_SECRET` bo'sh yoki xizmatdagidan farq qiladi, yoki server `rawBody` siz | `.env` dagi kalit; `main.ts` da `rawBody: true` |
+| `POST /payments/webhook` → 400 `summa mos emas` | xabardagi `amount` buyurtma `total` iga teng emas | xizmatga yuborilgan summani tekshiring |
+| `Cannot POST /payments/webhook` (404) | `wh-start` — webhook hali yo'q | `git checkout wh-done` |
 | `current transaction is aborted` | tranzaksiya ichida xato chiqdi, keyin yana so'rov yuborildi | xatodan keyin faqat ROLLBACK; tekshiruvni UPDATE'dan oldin qiling |

@@ -1,10 +1,11 @@
-// npm run smoke [-- restart | race | live]
+// npm run smoke [-- restart | race | live | payment]
 // Botni Telegram'siz sinaydi: haqiqiy Nest + Telegraf kodi, xabar bot.handleUpdate bilan beriladi,
 // botning javobi ushlanadi (Telegram'ga hech qanday so'rov ketmaydi).
 // Bazangiz o'zgarmaydi: smoke vaqtinchalik <baza>_smoke bazasini ochadi va oxirida o'chiradi.
 //   restart — savat, buyurtma va telefon kutish server qayta ishga tushganda qoladimi
 //   race    — omborda 1 ta Planshet, ikki mijoz bir vaqtda buyurtma beradi; admin ikki marta bekor qiladi
 //   live    — jonli panel: tokensiz ulanish yopiladimi, buyurtma va holat o'zgarishi order-changed bo'lib keladimi
+//   payment — to'lov webhook'i: imzoli xabar yoziladimi, takror bir marta, imzosiz 401, rad ham yoziladi, panelga hodisa
 const path = require('path');
 const { execSync } = require('child_process');
 
@@ -20,6 +21,8 @@ process.env.BOT_TOKEN = '123:SMOKE';
 process.env.ADMIN_TELEGRAM_IDS = String(ADMIN);
 const PANEL_TOKEN = 'smoke-panel';
 process.env.ADMIN_PANEL_TOKEN = PANEL_TOKEN;
+const PAY_SECRET = 'smoke-kalit';
+process.env.PAYMENT_WEBHOOK_SECRET = PAY_SECRET;
 process.env.DB_LOGGING = 'false';
 
 const results = [];
@@ -112,7 +115,7 @@ async function boot(http = false) {
   const { AppModule } = dist('api/app.module');
   const { TelegramService } = dist('api/telegram/telegram.service');
   const app = http
-    ? await NestFactory.create(AppModule, { logger: ['error'] })
+    ? await NestFactory.create(AppModule, { logger: ['error'], rawBody: true }) // main.ts dagi kabi
     : await NestFactory.createApplicationContext(AppModule, {
         logger: ['error'],
       });
@@ -341,6 +344,110 @@ async function liveMode() {
   await app.close();
 }
 
+async function paymentMode() {
+  console.log(
+    "\n— payment: to'lov webhook'i — imzo, takror, rad va panelga hodisa",
+  );
+  if (!hasDb) {
+    console.log('  (baza ulanmagan — payment faqat PostgreSQL bilan sinaladi)');
+    return;
+  }
+  let sign;
+  try {
+    ({ sign } = dist('api/payment/signature'));
+  } catch {
+    console.log("  (to'lov webhook'i hali qo'shilmagan)");
+    return;
+  }
+  const { io: connectIo } = require('socket.io-client');
+  const { app, say, tap, port } = await boot(true);
+  const url = `http://localhost:${port}`;
+  await say(AZIZA, '/start');
+  await tap(AZIZA, 'add:1');
+  await tap(AZIZA, 'checkout');
+  await say(AZIZA, '+998901112233');
+  const [order] = await q(
+    'SELECT id, total FROM orders ORDER BY id DESC LIMIT 1',
+  );
+  const post = async (obj, key) => {
+    const body = JSON.stringify(obj);
+    const headers = { 'Content-Type': 'application/json' };
+    if (key !== null) headers['X-Signature'] = sign(body, key);
+    const r = await fetch(`${url}/payments/webhook`, {
+      method: 'POST',
+      headers,
+      body,
+    });
+    return { status: r.status, body: await r.json().catch(() => null) };
+  };
+  const rows = async (pid) =>
+    (
+      await q('SELECT count(*)::int AS n FROM payments WHERE payment_id = $1', [
+        pid,
+      ])
+    )[0].n;
+  const pay = {
+    paymentId: 'pay_smoke_1',
+    orderId: order.id,
+    status: 'paid',
+    amount: order.total,
+  };
+  const c = connectIo(url, {
+    auth: { token: PANEL_TOKEN },
+    reconnection: false,
+  });
+  await new Promise((ok) => c.once('connect', ok));
+  const ev = new Promise((ok) => {
+    const tm = setTimeout(() => ok(null), 3000);
+    c.once('order-changed', (x) => {
+      clearTimeout(tm);
+      ok(x);
+    });
+  });
+  const r0 = await post(pay, null);
+  check(
+    r0.status === 401 && (await rows('pay_smoke_1')) === 0,
+    `imzosiz — ${r0.status}, payments da qator yo'q`,
+  );
+  const r1 = await post(pay, PAY_SECRET);
+  const [o1] = await q('SELECT payment_status FROM orders WHERE id = $1', [
+    order.id,
+  ]);
+  check(
+    r1.status === 200 &&
+      r1.body?.duplicate === false &&
+      o1.payment_status === 'paid',
+    `imzoli to'lov — ${r1.status} ${JSON.stringify(r1.body)} · #${order.id} payment_status=${o1.payment_status}`,
+  );
+  const e1 = await ev;
+  check(
+    Boolean(e1) && e1.reason === 'payment' && e1.orderId === order.id,
+    `panelga → order-changed ${JSON.stringify(e1)}`,
+  );
+  const r2 = await post(pay, PAY_SECRET);
+  check(
+    r2.status === 200 &&
+      r2.body?.duplicate === true &&
+      (await rows('pay_smoke_1')) === 1,
+    `takror — ${r2.status} ${JSON.stringify(r2.body)} · payments da 1 qator`,
+  );
+  const r3 = await post(
+    { ...pay, paymentId: 'pay_smoke_2', status: 'failed' },
+    PAY_SECRET,
+  );
+  const [o3] = await q('SELECT payment_status FROM orders WHERE id = $1', [
+    order.id,
+  ]);
+  check(
+    r3.status === 200 &&
+      (await rows('pay_smoke_2')) === 1 &&
+      o3.payment_status === 'paid',
+    `keyingi rad — yozildi, lekin to'langan buyurtma «paid» qoldi (${o3.payment_status})`,
+  );
+  c.close();
+  await app.close();
+}
+
 (async () => {
   if (process.argv[2] === '__step') {
     if (process.env.SMOKE_DB_URL) {
@@ -376,6 +483,7 @@ async function liveMode() {
     if (MODE === 'all' || MODE === 'restart') await restartMode();
     if (MODE === 'all' || MODE === 'race') await raceMode();
     if (MODE === 'all' || MODE === 'live') await liveMode();
+    if (MODE === 'all' || MODE === 'payment') await paymentMode();
   } finally {
     if (hasDb) {
       const db = new URL(smokeUrl).pathname.slice(1);
