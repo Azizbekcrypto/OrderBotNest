@@ -38,4 +38,4 @@ jobs:
       - run: npm ci
       - run: npm run smoke
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shop  # konteyner paroli — sir emas, job bilan birga o'chadi
+          DATABASE_URL: ${{ secrets.DATABSE_URL }}
