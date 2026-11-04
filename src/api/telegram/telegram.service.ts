@@ -4,6 +4,7 @@ import { config } from '../../config';
 import { OrderStatus, User } from '../../core/entity';
 import { CartService } from '../cart/cart.service';
 import { CatalogService } from '../catalog/catalog.service';
+import { LiveGateway } from '../live/live.gateway';
 import { OrderService } from '../order/order.service';
 import { UserService } from '../user/user.service';
 import { cartKeyboard, catalogKeyboard, orderKeyboard } from './keyboards';
@@ -19,6 +20,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     private readonly catalog: CatalogService,
     private readonly cart: CartService,
     private readonly orders: OrderService,
+    private readonly live: LiveGateway,
   ) {}
 
   async onModuleInit() {
@@ -133,6 +135,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private async placeOrder(ctx: Context, user: User) {
     try {
       const order = await this.orders.place(user, await this.cart.list(user));
+      // tranzaksiya tugadi — buyurtma bazada; ochiq panellarga xabar beramiz
+      this.live.orderChanged(order.id, 'new');
       await ctx.reply(texts.orderPlaced(order));
       for (const admin of await this.users.admins()) {
         if (admin.telegram_id === user.telegram_id) continue;
@@ -181,6 +185,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
             Number(ctx.match[1]),
             ctx.match[2] as OrderStatus,
           );
+          this.live.orderChanged(order.id, 'status');
           await ctx.answerCbQuery(texts.statusChanged(order));
           await ctx.editMessageText(
             texts.orderLine(order),

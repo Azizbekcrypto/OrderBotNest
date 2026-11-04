@@ -1,9 +1,10 @@
-// npm run smoke [-- restart | race]
+// npm run smoke [-- restart | race | live]
 // Botni Telegram'siz sinaydi: haqiqiy Nest + Telegraf kodi, xabar bot.handleUpdate bilan beriladi,
 // botning javobi ushlanadi (Telegram'ga hech qanday so'rov ketmaydi).
 // Bazangiz o'zgarmaydi: smoke vaqtinchalik <baza>_smoke bazasini ochadi va oxirida o'chiradi.
 //   restart — savat, buyurtma va telefon kutish server qayta ishga tushganda qoladimi
 //   race    — omborda 1 ta Planshet, ikki mijoz bir vaqtda buyurtma beradi; admin ikki marta bekor qiladi
+//   live    — jonli panel: tokensiz ulanish yopiladimi, buyurtma va holat o'zgarishi order-changed bo'lib keladimi
 const path = require('path');
 const { execSync } = require('child_process');
 
@@ -17,6 +18,8 @@ const NAME = { [ADMIN]: 'Jasur', [AZIZA]: 'Aziza', [BOBUR]: 'Bobur' };
 
 process.env.BOT_TOKEN = '123:SMOKE';
 process.env.ADMIN_TELEGRAM_IDS = String(ADMIN);
+const PANEL_TOKEN = 'smoke-panel';
+process.env.ADMIN_PANEL_TOKEN = PANEL_TOKEN;
 process.env.DB_LOGGING = 'false';
 
 const results = [];
@@ -104,12 +107,16 @@ async function setupDb() {
 const { NestFactory } = require('@nestjs/core');
 const dist = (p) => require(path.join(ROOT, 'dist', p));
 let uid = 1;
-async function boot() {
+// http=true — haqiqiy HTTP server (tasodifiy port): /admin va WebSocket shu portda; aks holda — faqat Nest konteksti
+async function boot(http = false) {
   const { AppModule } = dist('api/app.module');
   const { TelegramService } = dist('api/telegram/telegram.service');
-  const app = await NestFactory.createApplicationContext(AppModule, {
-    logger: ['error'],
-  });
+  const app = http
+    ? await NestFactory.create(AppModule, { logger: ['error'] })
+    : await NestFactory.createApplicationContext(AppModule, {
+        logger: ['error'],
+      });
+  if (http) await app.listen(0);
   const bot = app.get(TelegramService).bot;
   const from = (id) => ({ id, is_bot: false, first_name: NAME[id] });
   const chat = (id) => ({ id, type: 'private' });
@@ -146,7 +153,8 @@ async function boot() {
         },
       },
     });
-  return { app, say, tap };
+  const port = http ? app.getHttpServer().address().port : 0;
+  return { app, say, tap, port };
 }
 const last = (id) => [...inbox].reverse().find((m) => m.to === id)?.text || '';
 const productId = async (name) =>
@@ -262,6 +270,77 @@ async function raceMode() {
   await app.close();
 }
 
+// live: panel nima ko'radi — haqiqiy HTTP server, socket.io-client (panel ham shuni ishlatadi)
+async function liveMode() {
+  console.log(
+    "\n— live: jonli panel — tokensiz ulanish, yangi buyurtma va holat o'zgarishi",
+  );
+  if (!hasDb) {
+    console.log('  (baza ulanmagan — live faqat PostgreSQL bilan sinaladi)');
+    return;
+  }
+  let connectIo;
+  try {
+    ({ io: connectIo } = require('socket.io-client'));
+  } catch {
+    console.log("  (socket.io-client yo'q — jonli panel hali qo'shilmagan)");
+    return;
+  }
+  const { app, say, tap, port } = await boot(true);
+  const url = `http://localhost:${port}`;
+  // hodisani kutish: kelmasa 3 s dan keyin null
+  const wait = (c, ev) =>
+    new Promise((ok) => {
+      const tm = setTimeout(() => ok(null), 3000);
+      c.once(ev, (x) => {
+        clearTimeout(tm);
+        ok(x === undefined ? true : x);
+      });
+    });
+  const bad = connectIo(url, { auth: {}, reconnection: false });
+  const reason = await wait(bad, 'disconnect');
+  check(
+    reason === 'io server disconnect',
+    `tokensiz ulanish — server yopdi: ${reason}`,
+  );
+  bad.close();
+  const c = connectIo(url, {
+    auth: { token: PANEL_TOKEN },
+    reconnection: false,
+  });
+  await wait(c, 'connect');
+  const ev1 = wait(c, 'order-changed');
+  await say(BOBUR, '/start');
+  await tap(BOBUR, 'add:1');
+  await tap(BOBUR, 'checkout');
+  await say(BOBUR, '+998907654321');
+  const e1 = await ev1;
+  check(
+    Boolean(e1) && e1.reason === 'new',
+    `yangi buyurtma → order-changed ${JSON.stringify(e1)}`,
+  );
+  const res = await fetch(`${url}/admin/orders`, {
+    headers: { Authorization: `Bearer ${PANEL_TOKEN}` },
+  });
+  const list = res.ok ? await res.json() : [];
+  check(
+    res.status === 200 && Boolean(e1) && list[0]?.id === e1.orderId,
+    `GET /admin/orders ${res.status} — eng yuqorida #${list[0]?.id} · ${list[0]?.customer}`,
+  );
+  if (e1) {
+    const ev2 = wait(c, 'order-changed');
+    await say(ADMIN, '/start');
+    await tap(ADMIN, `status:${e1.orderId}:CONFIRMED`);
+    const e2 = await ev2;
+    check(
+      Boolean(e2) && e2.reason === 'status' && e2.orderId === e1.orderId,
+      `admin tasdiqladi → order-changed ${JSON.stringify(e2)}`,
+    );
+  }
+  c.close();
+  await app.close();
+}
+
 (async () => {
   if (process.argv[2] === '__step') {
     if (process.env.SMOKE_DB_URL) {
@@ -296,6 +375,7 @@ async function raceMode() {
   try {
     if (MODE === 'all' || MODE === 'restart') await restartMode();
     if (MODE === 'all' || MODE === 'race') await raceMode();
+    if (MODE === 'all' || MODE === 'live') await liveMode();
   } finally {
     if (hasDb) {
       const db = new URL(smokeUrl).pathname.slice(1);

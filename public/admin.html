@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buyurtmalar — jonli panel</title>
+<style>
+  :root { --ink: #1f2328; --mute: #57606a; --line: #d0d7de; --ok: #1a7f37; --wait: #9a6700; --bad: #cf222e; --bg: #f6f8fa; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: #fff; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font-size: 18px; }
+  #holat { margin-left: auto; padding: 4px 10px; border-radius: 999px; font-weight: 600; font-size: 13px; color: #fff; background: var(--mute); }
+  #holat.ulangan { background: var(--ok); }
+  #holat.ulanmoqda { background: var(--wait); }
+  #holat.ulanmagan { background: var(--bad); }
+  main { padding: 16px 20px; max-width: 1000px; margin: 0 auto; }
+  form { display: flex; gap: 8px; margin-bottom: 14px; }
+  input { flex: 1; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  button { padding: 8px 14px; border: 0; border-radius: 6px; background: var(--ink); color: #fff; font: inherit; cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--bg); font-size: 13px; color: var(--mute); }
+  tr.yangi td { background: #fff8c5; }
+  .izoh { color: var(--mute); font-size: 13px; margin: 10px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Buyurtmalar — jonli panel</h1>
+  <span id="holat">Ulanmagan</span>
+</header>
+<main>
+  <form id="kirish">
+    <input id="token" type="password" placeholder=".env dagi ADMIN_PANEL_TOKEN" autocomplete="off">
+    <button>Kirish</button>
+  </form>
+  <table>
+    <thead><tr><th>#</th><th>Mijoz</th><th>Telefon</th><th>Mahsulotlar</th><th>Jami</th><th>Holat</th><th>Vaqt</th></tr></thead>
+    <tbody id="royxat"><tr><td colspan="7">Token kiriting</td></tr></tbody>
+  </table>
+  <p class="izoh">Yangi buyurtma yoki holat o'zgarsa, ro'yxat o'zi yangilanadi — sahifani qayta ochish shart emas.</p>
+</main>
+<!-- socket.io klienti: server o'zi beradi (/socket.io/socket.io.js) -->
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  // Uch holat: ulangan — hodisalar keladi · ulanmoqda — ulanish yo'q, klient o'zi qayta urinmoqda ·
+  // ulanmagan — klient urinmayapti (token noto'g'ri — server ulanishni yopdi)
+  const HOLAT = { ulangan: 'Ulangan', ulanmoqda: 'Ulanmoqda…', ulanmagan: 'Ulanmagan' };
+  const STATUS = { NEW: 'Yangi', CONFIRMED: 'Tasdiqlandi', DELIVERED: 'Yetkazildi', CANCELLED: 'Bekor' };
+  const el = (id) => document.getElementById(id);
+  // Telegram'dan kelgan ism va mahsulot nomi — matn sifatida (ichida HTML bo'lsa ham ishlamaydi)
+  const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  let token = localStorage.getItem('adminToken') || '';
+  let ulanish = null;
+  let oxirgiId = 0;
+
+  function holatQoy(h) {
+    el('holat').className = h;
+    el('holat').textContent = HOLAT[h];
+  }
+
+  // Ro'yxat — har doim Backend'dan (GET /admin/orders). Hodisa faqat «nimadir o'zgardi» deydi.
+  async function yukla() {
+    const r = await fetch('/admin/orders', { headers: { Authorization: 'Bearer ' + token } });
+    if (r.status === 401) {
+      el('royxat').innerHTML = "<tr><td colspan='7'>Token noto'g'ri</td></tr>";
+      return;
+    }
+    const list = await r.json();
+    const eng = list.length ? list[0].id : 0;
+    el('royxat').innerHTML = list.length
+      ? list.map((o) => `<tr class="${o.id > oxirgiId && oxirgiId ? 'yangi' : ''}">
+          <td>${o.id}</td><td>${esc(o.customer)}</td><td>${esc(o.phone)}</td>
+          <td>${o.items.map((i) => `${esc(i.name)} × ${i.qty}`).join('<br>')}</td>
+          <td>${o.total.toLocaleString('ru-RU')} so'm</td><td>${STATUS[o.status] || o.status}</td>
+          <td>${new Date(o.created_at).toLocaleTimeString('ru-RU')}</td></tr>`).join('')
+      : "<tr><td colspan='7'>Hali buyurtma yo'q</td></tr>";
+    oxirgiId = eng;
+  }
+
+  function ulan() {
+    if (ulanish) ulanish.close();
+    ulanish = io({ auth: { token } });
+    holatQoy('ulanmoqda');
+    ulanish.on('connect', () => holatQoy('ulangan'));
+    // uzilish yoki ulanish xatosi: klient o'zi qayta urinayotgan bo'lsa (active) — «ulanmoqda», server yopgan bo'lsa — «ulanmagan»
+    ulanish.on('disconnect', () => holatQoy(ulanish.active ? 'ulanmoqda' : 'ulanmagan'));
+    ulanish.on('connect_error', () => holatQoy(ulanish.active ? 'ulanmoqda' : 'ulanmagan'));
+    ulanish.on('order-changed', () => yukla());
+  }
+
+  el('kirish').addEventListener('submit', (e) => {
+    e.preventDefault();
+    token = el('token').value.trim();
+    localStorage.setItem('adminToken', token);
+    yukla();
+    ulan();
+  });
+
+  if (token) {
+    el('token').value = token;
+    yukla();
+    ulan();
+  }
+</script>
+</body>
+</html>
