@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { OrderItem } from './order-item.entity';
+import type { PaymentStatus } from './payment.entity';
 import { User } from './user.entity';
 
 export type OrderStatus = 'NEW' | 'CONFIRMED' | 'DELIVERED' | 'CANCELLED';
@@ -29,6 +30,10 @@ export class Order {
 
   @Column({ type: 'varchar', default: 'NEW' })
   status: OrderStatus;
+
+  // to'lov xizmatining oxirgi xabari (webhook): null — hali xabar kelmagan
+  @Column({ type: 'varchar', nullable: true })
+  payment_status: PaymentStatus | null;
 
   @OneToMany(() => OrderItem, (i) => i.order, { cascade: true, eager: true })
   items: OrderItem[];

@@ -14,7 +14,7 @@ import { isAdminToken } from './admin-token';
 // (server yopgan ulanishga klient o'zi qayta ulanmaydi — panelda «Ulanmagan»).
 // Hodisa order-changed — { orderId, reason }: qaysi buyurtma va nega o'zgargani.
 // Yangi holatni panel GET /admin/orders dan qayta so'raydi — hodisa ichida ro'yxat ham, son ham yo'q.
-export type OrderChangeReason = 'new' | 'status';
+export type OrderChangeReason = 'new' | 'status' | 'payment';
 
 @WebSocketGateway()
 export class LiveGateway implements OnGatewayConnection, OnGatewayDisconnect {
