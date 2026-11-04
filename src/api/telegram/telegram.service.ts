@@ -7,9 +7,8 @@ import { CatalogService } from '../catalog/catalog.service';
 import { OrderService } from '../order/order.service';
 import { UserService } from '../user/user.service';
 import { cartKeyboard, catalogKeyboard, orderKeyboard } from './keyboards';
+import { isPhone } from './phone';
 import { texts } from './texts';
-
-const PHONE = /^\+?\d{9,13}$/;
 
 @Injectable()
 export class TelegramService implements OnModuleInit, OnModuleDestroy {
@@ -153,8 +152,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private async onText(ctx: Context & { message: { text: string } }) {
     const user = await this.users.getOrCreate(ctx.from!);
     if (user.state === 'WAITING_PHONE') {
-      const phone = ctx.message.text.trim();
-      if (!PHONE.test(phone)) return ctx.reply(texts.badPhone);
+      const phone = ctx.message.text.replace(/[\s-]/g, '');
+      if (!isPhone(phone)) return ctx.reply(texts.badPhone);
       await this.users.setPhone(user, phone);
       return this.placeOrder(ctx, user);
     }
