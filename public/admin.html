@@ -61,6 +61,7 @@
   }
 
   // Ro'yxat — har doim Backend'dan (GET /admin/orders). Hodisa faqat «nimadir o'zgardi» deydi.
+  // Ikki joyda chaqiriladi: connect (birinchi va har qayta ulanish) va order-changed.
   async function yukla() {
     const r = await fetch('/admin/orders', { headers: { Authorization: 'Bearer ' + token } });
     if (r.status === 401) {
@@ -83,10 +84,15 @@
     if (ulanish) ulanish.close();
     ulanish = io({ auth: { token } });
     holatQoy('ulanmoqda');
-    ulanish.on('connect', () => holatQoy('ulangan'));
+    // connect — birinchi ulanishda HAM har qayta ulanishda: uzilish paytidagi hodisa kelmaydi, shuning uchun ro'yxat qayta so'raladi
+    ulanish.on('connect', () => {
+      holatQoy('ulangan');
+      yukla();
+    });
     // uzilish yoki ulanish xatosi: klient o'zi qayta urinayotgan bo'lsa (active) — «ulanmoqda», server yopgan bo'lsa — «ulanmagan»
     ulanish.on('disconnect', () => holatQoy(ulanish.active ? 'ulanmoqda' : 'ulanmagan'));
     ulanish.on('connect_error', () => holatQoy(ulanish.active ? 'ulanmoqda' : 'ulanmagan'));
+    // tinglovchi bir marta, connect'dan TASHQARIDA (ichida bo'lsa har qayta ulanishda yana bittasi qo'shiladi)
     ulanish.on('order-changed', () => yukla());
   }
 
@@ -94,13 +100,11 @@
     e.preventDefault();
     token = el('token').value.trim();
     localStorage.setItem('adminToken', token);
-    yukla();
     ulan();
   });
 
   if (token) {
     el('token').value = token;
-    yukla();
     ulan();
   }
 </script>
