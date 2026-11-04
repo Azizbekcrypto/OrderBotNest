@@ -55,6 +55,13 @@ Hodisa tranzaksiya tugagandan keyin yuboriladi: panel so'raganda buyurtma bazada
 - Brauzersiz tekshirish: `npm run live` — terminal klienti (`npm run live -- notogri` — noto'g'ri token bilan).
 - Telegram'siz tekshirish: `npm run smoke -- live`.
 
+### Qayta ulanish: uzilish paytidagi hodisa kelmaydi
+
+socket.io ulanishni o'zi tiklaydi, lekin **ulanish yo'q paytda yuborilgan `order-changed` qayta kelmaydi**: server uni faqat hozir ulangan panellarga yuboradi. Shuning uchun panel **har `connect` da** (birinchi va har qayta ulanishda) ro'yxatni `GET /admin/orders` dan qayta so'raydi. `npm run live` ham shunday: `connect` dan keyin `GET /admin/orders → N ta, eng yangisi #…`.
+
+- Ro'yxat ikki joyda so'raladi: `connect` va `order-changed`. Tinglovchi **bir marta, `connect` dan tashqarida** qo'shiladi — ichida bo'lsa har qayta ulanishda yana bittasi qo'shiladi va bitta hodisaga bir nechta `GET` ketadi.
+- Qanday buziladi va qanday tekshiriladi — `BUZISH.md`.
+
 ## Baza
 
 | Jadval | Nima | Muhim ustun / qoida |
@@ -119,6 +126,7 @@ AI kodni o'zgartirgandan keyin har bosqichda yurgizing: ✗ chiqsa, qaysi band e
 | `cicd1-start` / `cicd1-done` | GitHub Actions lentasi: `npm ci` · `tsc` · `test` · `build` |
 | `cicd2-start` / `cicd2-done` | lentada `smoke` job (`services: postgres`), README badge (PR #1) |
 | `ws1-start` / `ws1-done` | jonli panel: socket.io gateway, `order-changed`, `/admin`, `npm run live` |
+| `ws2-start` / `ws2-done` | qayta ulanish: panel va `npm run live` har `connect` da ro'yxatni qayta so'raydi; `BUZISH.md` |
 
 Mentor darsi `tgpg-start` dan boshlanadi: `git checkout tgpg-start`. Oxirida o'z natijangizni `tgpg-done` bilan solishtirasiz.
 
@@ -136,5 +144,7 @@ Mentor darsi `tgpg-start` dan boshlanadi: `git checkout tgpg-start`. Oxirida o'z
 | `connect_error: xhr poll error` (panel «Ulanmoqda…») | server ishlamayapti yoki manzil/port noto'g'ri; klient o'zi qayta urinadi | serverni yoqing — panel o'zi ulanadi |
 | `disconnect: io server disconnect` (panel «Ulanmagan») | token noto'g'ri yoki bo'sh — server ulanishni yopdi | `.env` dagi `ADMIN_PANEL_TOKEN` ni kiriting |
 | `disconnect: ping timeout` | ~45 s javob yo'q (internet uzildi, server qotdi) | o'zi qayta ulanadi; doimiy bo'lsa — tarmoqni tekshiring |
+| belgi «Ulangan», lekin yangi buyurtma ro'yxatda yo'q (bazada bor) | qayta ulanishdan oldin yuborilgan hodisa kelmaydi; panel `connect` da qayta so'ramayapti | `ws2-done`: `connect` ichida `yukla()` |
+| bitta buyurtmaga bir nechta `GET /admin/orders` (F12 → Network), sariq belgi yo'qoladi | `order-changed` tinglovchisi `connect` ichida — har qayta ulanishda yana bittasi | tinglovchini `connect` dan tashqariga, bir marta |
 | `GET /admin/orders` → 401 | `Authorization: Bearer <token>` yo'q yoki noto'g'ri | panel o'zi yuboradi; curl'da sarlavhani qo'shing |
 | `current transaction is aborted` | tranzaksiya ichida xato chiqdi, keyin yana so'rov yuborildi | xatodan keyin faqat ROLLBACK; tekshiruvni UPDATE'dan oldin qiling |

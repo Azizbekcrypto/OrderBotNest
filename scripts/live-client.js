@@ -21,6 +21,18 @@ const holat = (s) =>
 
 const s = io(url, { auth: { token } });
 console.log(`${t()} ulanmoqda… ${url}`);
+// Panel kabi: har connect'da (birinchi va qayta) ro'yxat qayta so'raladi — uzilish paytidagi hodisa kelmaydi
+async function royxat() {
+  const r = await fetch(`${url}/admin/orders`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) return console.log(`${t()} GET /admin/orders → ${r.status}`);
+  const list = await r.json();
+  console.log(
+    `${t()} GET /admin/orders → ${list.length} ta` +
+      (list.length ? `, eng yangisi #${list[0].id}` : ''),
+  );
+}
 s.on('connect', () => {
   console.log(
     `${t()} connect · ${holat(s)} · transport: ${s.io.engine.transport.name}`,
@@ -28,6 +40,7 @@ s.on('connect', () => {
   s.io.engine.once('upgrade', (tr) =>
     console.log(`${t()} transport: ${tr.name}`),
   );
+  royxat().catch((e) => console.log(`${t()} GET xato: ${e.message}`));
 });
 s.on('disconnect', (reason) =>
   console.log(
