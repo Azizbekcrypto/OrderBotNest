@@ -13,7 +13,7 @@ export class UserService {
   // Avval SELECT (bor bo'lsa shu qator), bo'lmasa INSERT.
   // SELECT'siz to'g'ridan-to'g'ri INSERT qilinsa ikkinchi /start da UNIQUE xatosi chiqadi.
   async getOrCreate(from: { id: number; first_name: string }): Promise<User> {
-    const telegram_id = from.id; // BIGINT bazadan matn bo'lib keladi — biz ham matn saqlaymiz
+    const telegram_id = String(from.id); // BIGINT bazadan matn bo'lib keladi — biz ham matn saqlaymiz
     const role: Role = config.ADMIN_TELEGRAM_IDS.includes(from.id)
       ? 'admin'
       : 'customer';
