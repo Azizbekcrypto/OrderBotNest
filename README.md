@@ -1,3 +1,5 @@
+[![CI](https://github.com/Azizbekcrypto/OrderBotNest/actions/workflows/ci.yml/badge.svg)](https://github.com/Azizbekcrypto/OrderBotNest/actions/workflows/ci.yml)
+
 # OrderBotNest — CoddyCamp do'koni boti
 
 Mentor kursi loyihasi: Telegram buyurtma boti. **NestJS + Telegraf + TypeORM + PostgreSQL 18.**
