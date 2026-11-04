@@ -8,6 +8,8 @@ export const config = {
   // true bo'lsa TypeORM har SQL so'rovni terminalga yozadi — o'rganish uchun
   DB_LOGGING: process.env.DB_LOGGING === 'true',
   BOT_TOKEN: String(process.env.BOT_TOKEN || ''),
+  // jonli panel (/admin) va WebSocket ulanishi uchun maxfiy so'z — o'zingiz o'ylab topasiz
+  ADMIN_PANEL_TOKEN: String(process.env.ADMIN_PANEL_TOKEN || ''),
   // "123,456" → [123, 456]
   ADMIN_TELEGRAM_IDS: String(process.env.ADMIN_TELEGRAM_IDS || '')
     .split(',')
