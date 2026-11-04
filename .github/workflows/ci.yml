@@ -3,7 +3,6 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
-    # smoke uchun PostgreSQL: runner yonida vaqtinchalik konteyner, job tugashi bilan o'chadi
     services:
       postgres:
         image: postgres:18
@@ -18,6 +17,8 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shop
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,8 +29,4 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm test
       - run: npm run build
-      # Telegram'siz tekshiruv: restart + race. Smoke o'zi shop_smoke bazasini ochadi va oxirida o'chiradi;
-      # BOT_TOKEN va ADMIN_TELEGRAM_IDS ni smoke o'zi qo'yadi, Telegram'ga so'rov ketmaydi
       - run: npm run smoke
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shop
