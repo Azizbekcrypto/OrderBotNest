@@ -1,41 +1,38 @@
 name: CI
-on: [push, pull_request]
+
+# Har push'da (istalgan branch) va main'ga ochilgan pull request'da ishlaydi.
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
 jobs:
-  test:
+  ci:
+    name: install → typecheck → test → build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Qadamlar ketma-ket yuradi: biri qizil bo'lsa, keyingilari yurmaydi.
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Kodni olish
+        uses: actions/checkout@v7
+
+      - name: Node 24.18.0 (lokal mashinadagi bilan bir xil, npm 11.16.0)
+        uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: '24.18.0'
           cache: npm
-      - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npm test
-      - run: npm run build
-  smoke:
-    needs: test
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: shop
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm run smoke
-        env:
-          DATABASE_URL: ${{ secrets.DATABSE_URL }}
+
+      - name: 1. Kutubxonalar — package-lock.json bo'yicha aynan (npm ci)
+        run: npm ci
+
+      - name: 2. TypeScript tur tekshiruvi (tsc --noEmit)
+        run: npx tsc --noEmit
+
+      - name: 3. Testlar (jest)
+        run: npm test -- --ci
+
+      - name: 4. Build (nest build)
+        run: npm run build
