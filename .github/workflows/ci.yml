@@ -15,25 +15,8 @@ jobs:
       - run: npm run build
 
   smoke:
-    # faqat test job'i yashil bo'lsa yuradi
     needs: test
     runs-on: ubuntu-latest
-    services:
-      # vaqtinchalik PostgreSQL: job tugashi bilan o'chadi
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: shop
-        ports:
-          - 5432:5432
-        # pg_isready "tayyor" demaguncha qadamlar boshlanmaydi
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,7 +24,25 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: PostgreSQL vaqtincha ko'tarish
+        run: |
+          docker run -d --name pg-smoke -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=shop -p 5432:5432 postgres:16
+      - name: PostgreSQL tayyorligini kutish
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec pg-smoke pg_isready -h 127.0.0.1 -U postgres -q; then
+              echo "PostgreSQL tayyor"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "PostgreSQL 60 soniyada tayyor bo'lmadi"
+          docker logs pg-smoke
+          exit 1
       - name: Smoke (Telegram'siz)
         run: npm run smoke
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shop
+      - name: PostgreSQL to'xtatish
+        if: always()
+        run: docker rm -f pg-smoke || true
