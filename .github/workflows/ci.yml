@@ -1,6 +1,5 @@
 name: CI
 
-# Har push'da (istalgan branch) va main'ga ochilgan pull request'da ishlaydi.
 on:
   push:
   pull_request:
@@ -11,28 +10,25 @@ permissions:
 
 jobs:
   ci:
-    name: install → typecheck → test → build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Qadamlar ketma-ket yuradi: biri qizil bo'lsa, keyingilari yurmaydi.
     steps:
       - name: Kodni olish
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
-      - name: Node 24.18.0 (lokal mashinadagi bilan bir xil, npm 11.16.0)
-        uses: actions/setup-node@v7
+      - name: Node.js o'rnatish (mashinadagi versiya)
+        uses: actions/setup-node@v4
         with:
           node-version: '24.18.0'
           cache: npm
 
-      - name: 1. Kutubxonalar — package-lock.json bo'yicha aynan (npm ci)
+      - name: Kutubxonalar (package-lock.json bo'yicha aynan)
         run: npm ci
 
-      - name: 2. TypeScript tur tekshiruvi (tsc --noEmit)
-        run: npx tsc --noEmit
+      - name: TypeScript tur tekshiruvi
+        run: npm run lint
 
-      - name: 3. Testlar (jest)
-        run: npm test -- --ci
+      - name: Testlar
+        run: npm test
 
-      - name: 4. Build (nest build)
+      - name: Build
         run: npm run build
